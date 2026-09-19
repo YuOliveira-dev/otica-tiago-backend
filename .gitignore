@@ -1,0 +1,19 @@
+# Dependências
+node_modules/
+
+# Variáveis de ambiente
+.env
+.env.*
+!.env.example
+
+# Uploads locais e testes temporários
+uploads/
+scratch/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Builds
+dist/
+.vercel

@@ -1,0 +1,731 @@
+import { Router } from 'express';
+import prisma from '../../config/prisma.js';
+import { autenticarAdmin } from '../../middlewares/auth.middleware.js';
+
+const router = Router();
+
+// Todas as rotas deste módulo exigem autenticação de administrador
+router.use(autenticarAdmin);
+
+/**
+ * Função utilitária para gerar slug a partir do título
+ */
+function gerarSlug(texto, sufixo = '') {
+  const base = texto
+    .toString()
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return sufixo ? `${base}-${sufixo.toLowerCase().replace(/[^a-z0-9]/g, '')}` : base;
+}
+
+/**
+ * GET /api/admin/produtos
+ * Lista completa de produtos para o painel administrativo com paginação, filtros e estatísticas de estoque
+ */
+router.get('/', async (req, res) => {
+  try {
+    const {
+      busca,
+      categoria,
+      status,
+      pagina = 1,
+      limite = 20,
+      ordenarPor = 'criadoEm',
+      direcao = 'desc',
+    } = req.query;
+
+    const page = Math.max(1, parseInt(pagina, 10) || 1);
+    const take = Math.min(100, Math.max(1, parseInt(limite, 10) || 20));
+    const skip = (page - 1) * take;
+
+    const where = {};
+
+    // Filtro por status (se não fornecido ou 'TODOS', traz todos exceto arquivados por padrão)
+    if (status && status !== 'TODOS') {
+      where.status = status;
+    }
+
+    // Filtro por categoria (slug ou id)
+    if (categoria) {
+      where.OR = [
+        { categoriaId: categoria },
+        { categoria: { slug: categoria } },
+      ];
+    }
+
+    // Filtro por termo de busca (SKU Pai, Título ou Descrição)
+    if (busca && busca.trim()) {
+      const termo = busca.trim();
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { titulo: { contains: termo, mode: 'insensitive' } },
+            { skuPai: { contains: termo, mode: 'insensitive' } },
+            { descricao: { contains: termo, mode: 'insensitive' } },
+            {
+              variacoes: {
+                some: {
+                  skuVariacao: { contains: termo, mode: 'insensitive' },
+                },
+              },
+            },
+          ],
+        },
+      ];
+    }
+
+    // Ordenação dinâmica
+    const orderBy = {};
+    if (['titulo', 'skuPai', 'precoVenda', 'criadoEm', 'atualizadoEm'].includes(ordenarPor)) {
+      orderBy[ordenarPor] = direcao === 'asc' ? 'asc' : 'desc';
+    } else {
+      orderBy.criadoEm = 'desc';
+    }
+
+    const [total, produtos] = await Promise.all([
+      prisma.produto.count({ where }),
+      prisma.produto.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        include: {
+          categoria: {
+            select: { id: true, nome: true, slug: true },
+          },
+          subcategoria: {
+            select: { id: true, nome: true, slug: true },
+          },
+          variacoes: {
+            select: {
+              id: true,
+              skuVariacao: true,
+              corNome: true,
+              corHex: true,
+              aroMm: true,
+              ponteMm: true,
+              hasteMm: true,
+              material: true,
+              estoqueAtual: true,
+              precoDiferenciado: true,
+              statusAtivo: true,
+            },
+          },
+          midias: {
+            orderBy: [{ principal: 'desc' }, { ordem: 'asc' }],
+          },
+        },
+      }),
+    ]);
+
+    // Calcula estoque total consolidado por produto
+    const produtosComTotais = produtos.map((prod) => {
+      const estoqueTotal = prod.variacoes.reduce((acc, v) => acc + (v.estoqueAtual || 0), 0);
+      const imagemPrincipal = prod.midias.find((m) => m.principal)?.url || prod.midias[0]?.url || null;
+
+      return {
+        ...prod,
+        estoqueTotal,
+        imagemPrincipal,
+      };
+    });
+
+    res.json({
+      sucesso: true,
+      paginacao: {
+        total,
+        pagina: page,
+        limite: take,
+        totalPaginas: Math.ceil(total / take),
+      },
+      dados: produtosComTotais,
+    });
+  } catch (error) {
+    console.error('Erro ao listar produtos no admin:', error);
+    res.status(500).json({
+      sucesso: false,
+      erro: 'Falha interna ao consultar catálogo de produtos.',
+    });
+  }
+});
+
+/**
+ * GET /api/admin/produtos/:id
+ * Consulta detalhada de um produto individual para edição
+ */
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const produto = await prisma.produto.findUnique({
+      where: { id },
+      include: {
+        categoria: true,
+        subcategoria: true,
+        variacoes: {
+          include: {
+            historicoEstoque: {
+              orderBy: { criadoEm: 'desc' },
+              take: 10,
+            },
+            midias: true,
+          },
+        },
+        midias: {
+          orderBy: [{ principal: 'desc' }, { ordem: 'asc' }],
+        },
+      },
+    });
+
+    if (!produto) {
+      return res.status(404).json({
+        sucesso: false,
+        erro: 'Produto não encontrado.',
+      });
+    }
+
+    const estoqueTotal = produto.variacoes.reduce((acc, v) => acc + (v.estoqueAtual || 0), 0);
+
+    res.json({
+      sucesso: true,
+      dados: {
+        ...produto,
+        estoqueTotal,
+      },
+    });
+  } catch (error) {
+    console.error('Erro ao buscar produto por ID:', error);
+    res.status(500).json({
+      sucesso: false,
+      erro: 'Falha interna ao buscar dados do produto.',
+    });
+  }
+});
+
+/**
+ * POST /api/admin/produtos
+ * Criação atômica de novo produto com suas variações, mídias e registro inicial de estoque
+ */
+router.post('/', async (req, res) => {
+  try {
+    const {
+      skuPai,
+      titulo,
+      slug: customSlug,
+      descricao,
+      precoVenda,
+      precoPromocional,
+      destaqueHome = false,
+      novidade = false,
+      outlet = false,
+      status = 'ATIVO',
+      categoriaId,
+      subcategoriaId,
+      variacoes = [],
+      midias = [],
+    } = req.body;
+
+    // Validações obrigatórias
+    if (!skuPai || !titulo || precoVenda === undefined || !categoriaId) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: 'Campos obrigatórios ausentes: skuPai, titulo, precoVenda e categoriaId são requeridos.',
+      });
+    }
+
+    const skuNormalizado = skuPai.trim().toUpperCase();
+    const slugFinal = customSlug?.trim() || gerarSlug(titulo, skuNormalizado);
+
+    // Verifica unicidade de SKU e Slug
+    const [skuExistente, slugExistente] = await Promise.all([
+      prisma.produto.findUnique({ where: { skuPai: skuNormalizado } }),
+      prisma.produto.findUnique({ where: { slug: slugFinal } }),
+    ]);
+
+    if (skuExistente) {
+      return res.status(409).json({
+        sucesso: false,
+        erro: `O SKU Pai '${skuNormalizado}' já está em uso por outro produto.`,
+      });
+    }
+
+    if (slugExistente) {
+      return res.status(409).json({
+        sucesso: false,
+        erro: `O identificador amigável (slug) '${slugFinal}' já existe. Altere o título ou SKU.`,
+      });
+    }
+
+    // Execução transacional atômica
+    const novoProduto = await prisma.$transaction(async (tx) => {
+      // 1. Cria o produto pai
+      const prod = await tx.produto.create({
+        data: {
+          skuPai: skuNormalizado,
+          titulo: titulo.trim(),
+          slug: slugFinal,
+          descricao: (descricao || '').trim(),
+          precoVenda: Number(precoVenda),
+          precoPromocional: precoPromocional ? Number(precoPromocional) : null,
+          destaqueHome: Boolean(destaqueHome),
+          novidade: Boolean(novidade),
+          outlet: Boolean(outlet),
+          status,
+          categoriaId,
+          subcategoriaId: subcategoriaId || null,
+        },
+      });
+
+      // 2. Cria variações e seus respectivos históricos de estoque inicial
+      if (Array.isArray(variacoes) && variacoes.length > 0) {
+        for (let i = 0; i < variacoes.length; i++) {
+          const v = variacoes[i];
+          const skuVar = (v.skuVariacao || `${skuNormalizado}-${i + 1}`).trim().toUpperCase();
+          const estoque = parseInt(v.estoqueAtual, 10) || 0;
+
+          const variacaoCriada = await tx.produtoVariacao.create({
+            data: {
+              produtoId: prod.id,
+              skuVariacao: skuVar,
+              corNome: (v.corNome || 'Padrão').trim(),
+              corHex: v.corHex ? v.corHex.trim() : null,
+              aroMm: parseInt(v.aroMm, 10) || 0,
+              ponteMm: parseInt(v.ponteMm, 10) || 0,
+              hasteMm: parseInt(v.hasteMm, 10) || 0,
+              material: (v.material || 'Acetato').trim(),
+              estoqueAtual: estoque,
+              precoDiferenciado: v.precoDiferenciado ? Number(v.precoDiferenciado) : null,
+              statusAtivo: v.statusAtivo !== undefined ? Boolean(v.statusAtivo) : true,
+            },
+          });
+
+          // Log de estoque inicial se houver quantidade
+          if (estoque > 0) {
+            await tx.estoqueHistorico.create({
+              data: {
+                variacaoId: variacaoCriada.id,
+                quantidade: estoque,
+                tipoMovimentacao: 'ENTRADA',
+                motivo: 'Estoque inicial cadastrado no lançamento do produto.',
+              },
+            });
+          }
+        }
+      }
+
+      // 3. Cadastra mídias vinculadas ao produto
+      if (Array.isArray(midias) && midias.length > 0) {
+        for (let idx = 0; idx < midias.length; idx++) {
+          const m = midias[idx];
+          if (!m.url) continue;
+
+          await tx.produtoMidia.create({
+            data: {
+              produtoId: prod.id,
+              url: m.url,
+              tipo: m.tipo === 'VIDEO' ? 'VIDEO' : 'IMAGEM',
+              ordem: m.ordem !== undefined ? parseInt(m.ordem, 10) : idx,
+              principal: m.principal !== undefined ? Boolean(m.principal) : idx === 0,
+            },
+          });
+        }
+      }
+
+      return prod;
+    });
+
+    // Retorna o produto completo recém-criado
+    const produtoCompleto = await prisma.produto.findUnique({
+      where: { id: novoProduto.id },
+      include: {
+        categoria: true,
+        subcategoria: true,
+        variacoes: true,
+        midias: true,
+      },
+    });
+
+    res.status(201).json({
+      sucesso: true,
+      mensagem: 'Produto cadastrado com sucesso!',
+      dados: produtoCompleto,
+    });
+  } catch (error) {
+    console.error('Erro ao cadastrar produto:', error);
+    res.status(500).json({
+      sucesso: false,
+      erro: error.message || 'Falha ao processar o cadastro do produto.',
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/produtos/:id
+ * Atualização completa do produto, variações e mídias via transação atômica
+ */
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      skuPai,
+      titulo,
+      slug: customSlug,
+      descricao,
+      precoVenda,
+      precoPromocional,
+      destaqueHome,
+      novidade,
+      outlet,
+      status,
+      categoriaId,
+      subcategoriaId,
+      variacoes,
+      midias,
+    } = req.body;
+
+    const produtoExistente = await prisma.produto.findUnique({
+      where: { id },
+      include: { variacoes: true, midias: true },
+    });
+
+    if (!produtoExistente) {
+      return res.status(404).json({
+        sucesso: false,
+        erro: 'Produto não encontrado para atualização.',
+      });
+    }
+
+    const skuNormalizado = skuPai ? skuPai.trim().toUpperCase() : produtoExistente.skuPai;
+    const slugFinal = customSlug?.trim() || (titulo ? gerarSlug(titulo, skuNormalizado) : produtoExistente.slug);
+
+    // Validação de unicidade em caso de alteração de SKU ou Slug
+    if (skuNormalizado !== produtoExistente.skuPai) {
+      const skuConflito = await prisma.produto.findUnique({ where: { skuPai: skuNormalizado } });
+      if (skuConflito && skuConflito.id !== id) {
+        return res.status(409).json({ sucesso: false, erro: `O SKU '${skuNormalizado}' já está em uso.` });
+      }
+    }
+
+    if (slugFinal !== produtoExistente.slug) {
+      const slugConflito = await prisma.produto.findUnique({ where: { slug: slugFinal } });
+      if (slugConflito && slugConflito.id !== id) {
+        return res.status(409).json({ sucesso: false, erro: `O slug '${slugFinal}' já está em uso.` });
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Atualiza dados principais
+      await tx.produto.update({
+        where: { id },
+        data: {
+          skuPai: skuNormalizado,
+          titulo: titulo ? titulo.trim() : undefined,
+          slug: slugFinal,
+          descricao: descricao !== undefined ? descricao.trim() : undefined,
+          precoVenda: precoVenda !== undefined ? Number(precoVenda) : undefined,
+          precoPromocional: precoPromocional !== undefined ? (precoPromocional ? Number(precoPromocional) : null) : undefined,
+          destaqueHome: destaqueHome !== undefined ? Boolean(destaqueHome) : undefined,
+          novidade: novidade !== undefined ? Boolean(novidade) : undefined,
+          outlet: outlet !== undefined ? Boolean(outlet) : undefined,
+          status: status || undefined,
+          categoriaId: categoriaId || undefined,
+          subcategoriaId: subcategoriaId !== undefined ? (subcategoriaId || null) : undefined,
+        },
+      });
+
+      // 2. Atualiza Variações (se enviadas no payload)
+      if (Array.isArray(variacoes)) {
+        const idsManter = variacoes.filter((v) => v.id).map((v) => v.id);
+
+        // Remove variações não presentes na nova lista
+        await tx.produtoVariacao.deleteMany({
+          where: {
+            produtoId: id,
+            id: { notIn: idsManter },
+          },
+        });
+
+        for (let i = 0; i < variacoes.length; i++) {
+          const v = variacoes[i];
+          const skuVar = (v.skuVariacao || `${skuNormalizado}-${i + 1}`).trim().toUpperCase();
+          const estoque = parseInt(v.estoqueAtual, 10) || 0;
+
+          if (v.id) {
+            // Atualiza variação existente
+            const variacaoAtual = await tx.produtoVariacao.findUnique({ where: { id: v.id } });
+
+            await tx.produtoVariacao.update({
+              where: { id: v.id },
+              data: {
+                skuVariacao: skuVar,
+                corNome: (v.corNome || 'Padrão').trim(),
+                corHex: v.corHex ? v.corHex.trim() : null,
+                aroMm: parseInt(v.aroMm, 10) || 0,
+                ponteMm: parseInt(v.ponteMm, 10) || 0,
+                hasteMm: parseInt(v.hasteMm, 10) || 0,
+                material: (v.material || 'Acetato').trim(),
+                estoqueAtual: estoque,
+                precoDiferenciado: v.precoDiferenciado ? Number(v.precoDiferenciado) : null,
+                statusAtivo: v.statusAtivo !== undefined ? Boolean(v.statusAtivo) : true,
+              },
+            });
+
+            // Se o estoque mudou, registra ajuste no histórico
+            if (variacaoAtual && variacaoAtual.estoqueAtual !== estoque) {
+              const diferenca = estoque - variacaoAtual.estoqueAtual;
+              await tx.estoqueHistorico.create({
+                data: {
+                  variacaoId: v.id,
+                  quantidade: Math.abs(diferenca),
+                  tipoMovimentacao: diferenca > 0 ? 'ENTRADA' : 'AJUSTE',
+                  motivo: `Ajuste manual via edição do produto: saldo de ${variacaoAtual.estoqueAtual} para ${estoque}.`,
+                },
+              });
+            }
+          } else {
+            // Cria nova variação vinculada
+            const novaVar = await tx.produtoVariacao.create({
+              data: {
+                produtoId: id,
+                skuVariacao: skuVar,
+                corNome: (v.corNome || 'Padrão').trim(),
+                corHex: v.corHex ? v.corHex.trim() : null,
+                aroMm: parseInt(v.aroMm, 10) || 0,
+                ponteMm: parseInt(v.ponteMm, 10) || 0,
+                hasteMm: parseInt(v.hasteMm, 10) || 0,
+                material: (v.material || 'Acetato').trim(),
+                estoqueAtual: estoque,
+                precoDiferenciado: v.precoDiferenciado ? Number(v.precoDiferenciado) : null,
+                statusAtivo: v.statusAtivo !== undefined ? Boolean(v.statusAtivo) : true,
+              },
+            });
+
+            if (estoque > 0) {
+              await tx.estoqueHistorico.create({
+                data: {
+                  variacaoId: novaVar.id,
+                  quantidade: estoque,
+                  tipoMovimentacao: 'ENTRADA',
+                  motivo: 'Nova variação adicionada à grade de produto.',
+                },
+              });
+            }
+          }
+        }
+      }
+
+      // 3. Atualiza Mídias (se enviadas no payload)
+      if (Array.isArray(midias)) {
+        // Substitui a lista de mídias pelas novas
+        await tx.produtoMidia.deleteMany({
+          where: { produtoId: id },
+        });
+
+        for (let idx = 0; idx < midias.length; idx++) {
+          const m = midias[idx];
+          if (!m.url) continue;
+
+          await tx.produtoMidia.create({
+            data: {
+              produtoId: id,
+              url: m.url,
+              tipo: m.tipo === 'VIDEO' ? 'VIDEO' : 'IMAGEM',
+              ordem: m.ordem !== undefined ? parseInt(m.ordem, 10) : idx,
+              principal: m.principal !== undefined ? Boolean(m.principal) : idx === 0,
+            },
+          });
+        }
+      }
+    });
+
+    const produtoAtualizado = await prisma.produto.findUnique({
+      where: { id },
+      include: {
+        categoria: true,
+        subcategoria: true,
+        variacoes: true,
+        midias: true,
+      },
+    });
+
+    res.json({
+      sucesso: true,
+      mensagem: 'Produto atualizado com sucesso!',
+      dados: produtoAtualizado,
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar produto:', error);
+    res.status(500).json({
+      sucesso: false,
+      erro: error.message || 'Falha ao atualizar dados do produto.',
+    });
+  }
+});
+
+/**
+ * PATCH /api/admin/produtos/:id/visibilidade
+ * Alterna rapidamente a visibilidade do produto (ATIVO, OCULTO ou ARQUIVADO)
+ */
+router.patch('/:id/visibilidade', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['ATIVO', 'OCULTO', 'ARQUIVADO'].includes(status)) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: "Status inválido. Escolha entre 'ATIVO', 'OCULTO' ou 'ARQUIVADO'.",
+      });
+    }
+
+    const produto = await prisma.produto.update({
+      where: { id },
+      data: { status },
+      select: { id: true, titulo: true, status: true, skuPai: true },
+    });
+
+    res.json({
+      sucesso: true,
+      mensagem: `Visibilidade do produto '${produto.titulo}' alterada para ${status}.`,
+      dados: produto,
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar status do produto:', error);
+    res.status(500).json({
+      sucesso: false,
+      erro: 'Falha ao alterar status de visibilidade.',
+    });
+  }
+});
+
+/**
+ * PATCH /api/admin/produtos/variacoes/:variacaoId/estoque
+ * Movimentação atômica de estoque com histórico obrigatório
+ */
+router.patch('/variacoes/:variacaoId/estoque', async (req, res) => {
+  try {
+    const { variacaoId } = req.params;
+    const { quantidade, tipoMovimentacao, motivo } = req.body;
+
+    const qtd = parseInt(quantidade, 10);
+    if (isNaN(qtd) || qtd <= 0) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: 'Informe uma quantidade inteira positiva válida para a movimentação.',
+      });
+    }
+
+    if (!['ENTRADA', 'SAIDA_MANUAL', 'VENDA', 'AJUSTE'].includes(tipoMovimentacao)) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: "Tipo de movimentação inválido. Permitidos: 'ENTRADA', 'SAIDA_MANUAL', 'VENDA', 'AJUSTE'.",
+      });
+    }
+
+    const variacaoAtualizada = await prisma.$transaction(async (tx) => {
+      const variacao = await tx.produtoVariacao.findUnique({
+        where: { id: variacaoId },
+        include: { produto: { select: { titulo: true } } },
+      });
+
+      if (!variacao) {
+        throw new Error('Variação de produto não encontrada.');
+      }
+
+      let novoEstoque = variacao.estoqueAtual;
+
+      if (tipoMovimentacao === 'ENTRADA') {
+        novoEstoque += qtd;
+      } else if (tipoMovimentacao === 'SAIDA_MANUAL' || tipoMovimentacao === 'VENDA') {
+        if (variacao.estoqueAtual < qtd) {
+          throw new Error(`Estoque insuficiente! Saldo atual é de ${variacao.estoqueAtual} unidade(s).`);
+        }
+        novoEstoque -= qtd;
+      } else if (tipoMovimentacao === 'AJUSTE') {
+        novoEstoque = qtd; // Ajuste direto para o valor informado
+      }
+
+      const atualizado = await tx.produtoVariacao.update({
+        where: { id: variacaoId },
+        data: { estoqueAtual: novoEstoque },
+      });
+
+      await tx.estoqueHistorico.create({
+        data: {
+          variacaoId,
+          quantidade: qtd,
+          tipoMovimentacao,
+          motivo: (motivo || `Movimentação ${tipoMovimentacao} registrada pelo administrador.`).trim(),
+        },
+      });
+
+      return { ...atualizado, produtoTitulo: variacao.produto.titulo };
+    });
+
+    res.json({
+      sucesso: true,
+      mensagem: `Estoque da variação '${variacaoAtualizada.skuVariacao}' atualizado para ${variacaoAtualizada.estoqueAtual} un.`,
+      dados: variacaoAtualizada,
+    });
+  } catch (error) {
+    console.error('Erro na movimentação de estoque:', error);
+    res.status(400).json({
+      sucesso: false,
+      erro: error.message || 'Falha ao processar movimentação de estoque.',
+    });
+  }
+});
+
+/**
+ * DELETE /api/admin/produtos/:id
+ * Arquivamento de produto (Soft Delete) ou exclusão permanente opcional
+ */
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permanente } = req.query;
+
+    const produto = await prisma.produto.findUnique({ where: { id } });
+    if (!produto) {
+      return res.status(404).json({
+        sucesso: false,
+        erro: 'Produto não encontrado.',
+      });
+    }
+
+    if (permanente === 'true') {
+      // Exclusão permanente com limpeza em cascata
+      await prisma.produto.delete({ where: { id } });
+      return res.json({
+        sucesso: true,
+        mensagem: `Produto '${produto.titulo}' excluído permanentemente do banco de dados.`,
+      });
+    }
+
+    // Soft-delete padrão: muda status para ARQUIVADO
+    await prisma.produto.update({
+      where: { id },
+      data: { status: 'ARQUIVADO' },
+    });
+
+    res.json({
+      sucesso: true,
+      mensagem: `Produto '${produto.titulo}' arquivado com sucesso.`,
+    });
+  } catch (error) {
+    console.error('Erro ao excluir/arquivar produto:', error);
+    res.status(500).json({
+      sucesso: false,
+      erro: 'Falha interna ao processar exclusão do produto.',
+    });
+  }
+});
+
+export default router;
