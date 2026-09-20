@@ -27,8 +27,11 @@ function obterBaseUrl() {
   if (process.env.BACKEND_PUBLIC_URL) {
     return process.env.BACKEND_PUBLIC_URL.replace(/\/+$/, '');
   }
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  if (process.env.VERCEL) {
+    return 'https://otica-tiago-backend.vercel.app';
   }
   const port = process.env.PORT || 5000;
   return `http://localhost:${port}`;
