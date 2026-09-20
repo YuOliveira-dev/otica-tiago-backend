@@ -93,24 +93,42 @@ app.get('/api/health', (req, res) => {
 // 5. ROTAS PÚBLICAS DO CATÁLOGO E CLIENTE
 // ==========================================
 app.use('/api/produtos', produtosPublicRoutes);
+app.use('/produtos', produtosPublicRoutes);
+
 app.use('/api/categorias', categoriasPublicRoutes);
+app.use('/categorias', categoriasPublicRoutes);
+
 app.use('/api/banners', bannersPublicRoutes);
+app.use('/banners', bannersPublicRoutes);
+
 app.use('/api/frete', fretePublicRoutes);
+app.use('/frete', fretePublicRoutes);
+
 app.use('/api/midia', midiaPublicRoutes);
+app.use('/midia', midiaPublicRoutes);
 
 // ==========================================
 // 6. ROTAS ADMINISTRATIVAS TS EYEWEAR
 // ==========================================
 app.use('/api/admin/auth', authAdminRoutes);
+app.use('/admin/auth', authAdminRoutes);
+
 app.use('/api/admin/produtos', produtosAdminRoutes);
+app.use('/admin/produtos', produtosAdminRoutes);
+
 app.use('/api/admin/categorias', categoriasAdminRoutes);
+app.use('/admin/categorias', categoriasAdminRoutes);
+
 app.use('/api/admin/midia', midiaAdminRoutes);
+app.use('/admin/midia', midiaAdminRoutes);
+
 app.use('/api/admin/banners', bannersAdminRoutes);
+app.use('/admin/banners', bannersAdminRoutes);
 
 // ==========================================
-// 7. TRATAMENTO DE ROTA NÃO ENCONTRADA (404)
+// 7. TRATAMENTO DE ROTA NÃO ENCONTRADA (404 JSON)
 // ==========================================
-app.use('/api/*', (req, res) => {
+app.use('*', (req, res) => {
   res.status(404).json({
     sucesso: false,
     erro: `Endpoint ${req.originalUrl} não encontrado na API TS EYEWEAR.`,
