@@ -7,8 +7,19 @@ import { loginRateLimiter } from '../../middlewares/rateLimit.middleware.js';
 
 const router = Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'ts_eyewear_jwt_secret_super_segura_2026_otica_tiago';
+const FALLBACK_DEV_SECRET = 'ts_eyewear_jwt_secret_super_segura_2026_otica_tiago';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+function obterJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    if (!secret || secret.trim() === '' || secret === FALLBACK_DEV_SECRET) {
+      throw new Error('CONFIG_ERROR: Variável JWT_SECRET obrigatória e segura não foi configurada em ambiente de produção.');
+    }
+    return secret;
+  }
+  return secret || FALLBACK_DEV_SECRET;
+}
 
 /**
  * POST /api/admin/auth/login
@@ -48,7 +59,19 @@ router.post('/login', loginRateLimiter, async (req, res) => {
       });
     }
 
-    // 3. Emissão do Token JWT
+    // 3. Obtenção segura da chave JWT
+    let secret;
+    try {
+      secret = obterJwtSecret();
+    } catch (configErr) {
+      console.error('❌ Falha de segurança:', configErr.message);
+      return res.status(500).json({
+        sucesso: false,
+        erro: 'Erro de configuração interna de autenticação no servidor.',
+      });
+    }
+
+    // 4. Emissão do Token JWT
     const token = jwt.sign(
       {
         id: admin.id,
@@ -56,7 +79,7 @@ router.post('/login', loginRateLimiter, async (req, res) => {
         nome: admin.nome,
         role: 'ADMIN',
       },
-      JWT_SECRET,
+      secret,
       { expiresIn: JWT_EXPIRES_IN }
     );
 

@@ -1,7 +1,18 @@
 import jwt from 'jsonwebtoken';
 import prisma from '../config/prisma.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'ts_eyewear_jwt_secret_super_segura_2026_otica_tiago';
+const FALLBACK_DEV_SECRET = 'ts_eyewear_jwt_secret_super_segura_2026_otica_tiago';
+
+function obterJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    if (!secret || secret.trim() === '' || secret === FALLBACK_DEV_SECRET) {
+      throw new Error('CONFIG_ERROR: Variável JWT_SECRET obrigatória e segura não foi configurada em ambiente de produção.');
+    }
+    return secret;
+  }
+  return secret || FALLBACK_DEV_SECRET;
+}
 
 /**
  * Middleware para proteger rotas administrativas (/api/admin/*).
@@ -26,7 +37,18 @@ export async function autenticarAdmin(req, res, next) {
     }
 
     // 2. Verificação e decodificação do JWT
-    const decoded = jwt.verify(token, JWT_SECRET);
+    let secret;
+    try {
+      secret = obterJwtSecret();
+    } catch (configErr) {
+      console.error('❌ Falha de segurança:', configErr.message);
+      return res.status(500).json({
+        sucesso: false,
+        erro: 'Erro de configuração interna de autenticação no servidor.',
+      });
+    }
+
+    const decoded = jwt.verify(token, secret);
 
     // 3. Validação do usuário no banco
     const admin = await prisma.usuarioAdmin.findUnique({

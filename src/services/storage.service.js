@@ -39,14 +39,14 @@ function obterBaseUrl() {
 
 /**
  * Processa e otimiza a imagem para padrão ótico (600x600px WebP)
- * e faz o upload para o Vercel Blob (suportando stores públicos e privados)
+ * e faz o upload para o Vercel Blob com CDN pública direta de alta performance
  *
  * @param {Buffer} buffer - Buffer bruto do arquivo enviado pelo Multer
  * @param {string} prefixo - Prefixo de identificação (ex: SKU do produto)
- * @returns {Promise<string>} URL pública permanente da imagem
+ * @returns {Promise<string>} URL pública permanente no Edge CDN da Vercel
  */
 export async function processarEEnviarImagem(buffer, prefixo = 'produto') {
-  // 1. Processamento e Sanitização via Sharp
+  // 1. Processamento e Otimização via Sharp (WebP 85% para óculos)
   const imagemOtimizada = await sharp(buffer)
     .resize(600, 600, {
       fit: 'contain',
@@ -62,20 +62,18 @@ export async function processarEEnviarImagem(buffer, prefixo = 'produto') {
 
   // 3. Upload para Vercel Blob
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  const storeId = process.env.BLOB_STORE_ID;
 
   if (blobToken) {
     try {
-      // Tenta primeiramente como public
+      // Upload com acesso público direto no Edge CDN da Vercel
       const blob = await put(caminhoBlob, imagemOtimizada, {
         access: 'public',
         contentType: 'image/webp',
         token: blobToken,
-        storeId,
       });
       return blob.url;
     } catch (err) {
-      // Se o store foi configurado como privado na Vercel, envia com access: private
+      // Se o store configurado for privado, fallback seguro com proxy autenticado
       if (
         err.message?.includes('private store') ||
         err.message?.includes('Cannot use public access')
@@ -84,10 +82,8 @@ export async function processarEEnviarImagem(buffer, prefixo = 'produto') {
           access: 'private',
           contentType: 'image/webp',
           token: blobToken,
-          storeId,
         });
 
-        // Retorna URL através do proxy seguro da API para que o navegador exiba a imagem
         const baseUrl = obterBaseUrl();
         return `${baseUrl}/api/midia/blob?pathname=${encodeURIComponent(blob.pathname)}`;
       }
@@ -111,7 +107,7 @@ export async function processarEEnviarImagem(buffer, prefixo = 'produto') {
  * @param {Buffer} buffer - Buffer do arquivo de vídeo
  * @param {string} mimetype - Tipo MIME (ex: 'video/mp4')
  * @param {string} prefixo - Prefixo de identificação
- * @returns {Promise<string>} URL pública do vídeo
+ * @returns {Promise<string>} URL pública permanente do vídeo
  */
 export async function enviarVideo(buffer, mimetype, prefixo = 'video') {
   const extensao = mimetype === 'video/webm' ? 'webm' : 'mp4';
@@ -120,7 +116,6 @@ export async function enviarVideo(buffer, mimetype, prefixo = 'video') {
   const caminhoBlob = `videos/${nomeArquivo}`;
 
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  const storeId = process.env.BLOB_STORE_ID;
 
   if (blobToken) {
     try {
@@ -128,7 +123,6 @@ export async function enviarVideo(buffer, mimetype, prefixo = 'video') {
         access: 'public',
         contentType: mimetype,
         token: blobToken,
-        storeId,
       });
       return blob.url;
     } catch (err) {
@@ -140,7 +134,6 @@ export async function enviarVideo(buffer, mimetype, prefixo = 'video') {
           access: 'private',
           contentType: mimetype,
           token: blobToken,
-          storeId,
         });
         const baseUrl = obterBaseUrl();
         return `${baseUrl}/api/midia/blob?pathname=${encodeURIComponent(blob.pathname)}`;
@@ -168,7 +161,6 @@ export async function excluirMidiaDoStorage(publicUrl) {
   try {
     if (!publicUrl) return;
     const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-    const storeId = process.env.BLOB_STORE_ID;
     if (!blobToken) return;
 
     // Se for URL roteada via proxy do backend
@@ -176,14 +168,14 @@ export async function excluirMidiaDoStorage(publicUrl) {
       const parsed = new URL(publicUrl, 'http://localhost');
       const pathname = parsed.searchParams.get('pathname');
       if (pathname) {
-        await del(pathname, { token: blobToken, storeId });
+        await del(pathname, { token: blobToken });
       }
       return;
     }
 
     // Se for URL direta do Vercel Blob
     if (publicUrl.includes('blob.vercel-storage.com') || publicUrl.includes('vercel-storage.com')) {
-      await del(publicUrl, { token: blobToken, storeId });
+      await del(publicUrl, { token: blobToken });
       return;
     }
 

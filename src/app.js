@@ -43,17 +43,40 @@ app.use(
 const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  'https://frontend-five-teal-52.vercel.app',
   process.env.FRONTEND_URL,
 ].filter(Boolean);
+
+// Função segura para checar origem permitida
+const isAllowedOrigin = (origin) => {
+  // Permite requisições sem origin (como curl, chamadas de servidor ou testes internos)
+  if (!origin) return true;
+
+  // Domínios expressamente permitidos
+  if (allowedOrigins.some((allowed) => origin === allowed || origin.startsWith(allowed))) {
+    return true;
+  }
+
+  // Deploys preview da Vercel para o frontend do projeto
+  if (/^https:\/\/frontend-[a-z0-9-]+-yuoliveira-dev\.vercel\.app$/.test(origin) ||
+      /^https:\/\/frontend-[a-z0-9-]+\.vercel\.app$/.test(origin)) {
+    return true;
+  }
+
+  return false;
+};
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Permite requisições sem origin (como curl, mobile apps ou Postman) ou da lista permitida
-      if (!origin || allowedOrigins.includes(origin) || allowedOrigins.some((o) => origin.startsWith(o))) {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+      } else if (process.env.NODE_ENV !== 'production') {
+        // Modo desenvolvimento: permissivo apenas localmente
         callback(null, true);
       } else {
-        callback(null, true); // Fallback amigável durante o desenvolvimento local
+        // Bloqueia com segurança em produção sem vazar credenciais
+        callback(null, false);
       }
     },
     credentials: true,

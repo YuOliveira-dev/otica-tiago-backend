@@ -5,56 +5,105 @@ const router = Router();
 
 /**
  * GET /api/midia/blob?pathname=catalogo/exemplo.webp
- * Servidor proxy de streaming de alta performance com cache HTTP para Vercel Blob Privado
+ * Rota segura com proteção contra Path Traversal e redirecionamento de alta velocidade para o Edge CDN
  */
 router.get('/blob', async (req, res) => {
   try {
-    const pathname = req.query.pathname || req.query.url;
+    const rawPath = req.query.pathname || req.query.url;
 
-    if (!pathname) {
+    if (!rawPath) {
       return res.status(400).json({
         sucesso: false,
-        erro: 'O parâmetro pathname ou url é obrigatório para acessar a mídia.',
+        erro: 'O parâmetro pathname é obrigatório para acessar a mídia.',
+      });
+    }
+
+    // 1. Normalização e Sanitização rigorosa contra Path Traversal
+    const pathname = decodeURIComponent(String(rawPath)).trim().replace(/^\/+/, '');
+
+    if (pathname.includes('..') || pathname.includes('\\')) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: 'Caminho de arquivo inválido ou não autorizado.',
+      });
+    }
+
+    // Apenas subdiretórios permitidos de catálogo de produtos e vídeos
+    const isCatalogo = pathname.startsWith('catalogo/');
+    const isVideos = pathname.startsWith('videos/');
+
+    if (!isCatalogo && !isVideos) {
+      return res.status(403).json({
+        sucesso: false,
+        erro: 'Acesso negado: apenas mídias de catálogo e vídeos são acessíveis.',
       });
     }
 
     const token = process.env.BLOB_READ_WRITE_TOKEN;
-    const storeId = process.env.BLOB_STORE_ID;
-
-    const blobResult = await get(pathname, {
-      access: 'private',
-      token,
-      storeId,
-      useCache: true,
-    });
-
-    if (!blobResult || blobResult.statusCode === 404) {
-      return res.status(404).json({
+    if (!token) {
+      return res.status(503).json({
         sucesso: false,
-        erro: 'Arquivo de mídia não encontrado no Vercel Blob.',
+        erro: 'Serviço de armazenamento de mídia temporariamente indisponível.',
       });
     }
 
-    // Headers de cache de longa duração (1 ano) para CDN e navegadores
-    res.setHeader('Content-Type', blobResult.blob.contentType || 'image/webp');
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    if (blobResult.blob.size) {
-      res.setHeader('Content-Length', blobResult.blob.size);
+    // 2. Tenta obter no store público da Vercel e redireciona permanentemente (301) para a CDN
+    try {
+      const blobPublico = await get(pathname, {
+        access: 'public',
+        token,
+        useCache: true,
+      });
+
+      if (blobPublico?.blob?.url) {
+        return res.redirect(301, blobPublico.blob.url);
+      }
+    } catch {
+      // Caso não esteja no store público, prossegue para o fallback privado
     }
 
-    // Streaming contínuo sem alocação desnecessária de memória
-    const reader = blobResult.stream.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      res.write(value);
+    // 3. Fallback de compatibilidade para itens legados em store privado
+    try {
+      const blobPrivado = await get(pathname, {
+        access: 'private',
+        token,
+        useCache: true,
+      });
+
+      if (!blobPrivado || blobPrivado.statusCode === 404) {
+        return res.status(404).json({
+          sucesso: false,
+          erro: 'Arquivo de mídia não encontrado no Vercel Blob.',
+        });
+      }
+
+      // Headers de cache de longa duração (1 ano) para CDN e navegadores
+      res.setHeader('Content-Type', blobPrivado.blob.contentType || 'image/webp');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      if (blobPrivado.blob.size) {
+        res.setHeader('Content-Length', blobPrivado.blob.size);
+      }
+
+      // Streaming contínuo de baixo consumo de memória
+      const reader = blobPrivado.stream.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+      res.end();
+    } catch (errPrivado) {
+      console.error('Erro ao acessar mídia no Vercel Blob:', errPrivado);
+      return res.status(404).json({
+        sucesso: false,
+        erro: 'Arquivo de mídia não encontrado.',
+      });
     }
-    res.end();
   } catch (err) {
-    console.error('Erro no streaming de mídia do Vercel Blob:', err);
+    console.error('Erro inesperado na rota de mídia:', err);
     res.status(500).json({
       sucesso: false,
-      erro: 'Falha ao transmitir arquivo de mídia.',
+      erro: 'Falha interna ao processar mídia.',
     });
   }
 });
