@@ -606,6 +606,43 @@ router.patch('/:id/visibilidade', async (req, res) => {
 });
 
 /**
+ * PATCH /api/admin/produtos/:id/destaque
+ * Alterna se o produto aparece na vitrine da Home (Modelos Mais Desejados) e status de Lançamento
+ */
+router.patch('/:id/destaque', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { destaqueHome, novidade } = req.body;
+
+    const data = {};
+    if (destaqueHome !== undefined) data.destaqueHome = Boolean(destaqueHome);
+    if (novidade !== undefined) data.novidade = Boolean(novidade);
+
+    const produto = await prisma.produto.update({
+      where: { id },
+      data,
+      include: {
+        categoria: { select: { id: true, nome: true, slug: true } },
+        midias: true,
+        variacoes: true,
+      },
+    });
+
+    res.json({
+      sucesso: true,
+      mensagem: `Destaque do produto '${produto.titulo}' atualizado com sucesso.`,
+      dados: produto,
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar destaque do produto:', error);
+    res.status(500).json({
+      sucesso: false,
+      erro: 'Falha ao atualizar destaque do produto.',
+    });
+  }
+});
+
+/**
  * PATCH /api/admin/produtos/variacoes/:variacaoId/estoque
  * Movimentação atômica de estoque com histórico obrigatório
  */
