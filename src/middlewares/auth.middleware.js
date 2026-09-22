@@ -9,17 +9,10 @@ function obterJwtSecret() {
   return secret;
 }
 
-/**
- * Middleware para proteger rotas administrativas (/api/admin/*).
- * 1. Valida o token JWT obtido prioritariamente do Cookie HttpOnly ou do cabeçalho Bearer.
- * 2. Bate com a sessão exclusiva ativa salva no banco de dados (SessaoAdmin).
- * 3. Se a sessão foi revogada/deletada no logout ou expirou, nega o acesso imediatamente.
- */
 export async function autenticarAdmin(req, res, next) {
   try {
     let token = null;
 
-    // 1. Extração do token: Prioridade para Cookie HttpOnly seguro ou Authorization Bearer
     if (req.cookies && req.cookies.admin_token) {
       token = req.cookies.admin_token;
     } else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
@@ -33,7 +26,6 @@ export async function autenticarAdmin(req, res, next) {
       });
     }
 
-    // 2. Verificação e decodificação da assinatura do JWT com o segredo do .env
     let secret;
     try {
       secret = obterJwtSecret();
@@ -45,9 +37,8 @@ export async function autenticarAdmin(req, res, next) {
       });
     }
 
-    const decoded = jwt.verify(token, secret);
+    jwt.verify(token, secret);
 
-    // 3. Validação da sessão exclusiva salva no banco de dados
     const sessaoAtiva = await prisma.sessaoAdmin.findUnique({
       where: { token },
       include: {
@@ -70,7 +61,6 @@ export async function autenticarAdmin(req, res, next) {
     }
 
     if (new Date() > new Date(sessaoAtiva.expiraEm)) {
-      // Deleta a sessão expirada do banco
       await prisma.sessaoAdmin.delete({ where: { id: sessaoAtiva.id } }).catch(() => {});
       return res.status(401).json({
         sucesso: false,

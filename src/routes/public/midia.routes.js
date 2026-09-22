@@ -3,10 +3,6 @@ import { get } from '@vercel/blob';
 
 const router = Router();
 
-/**
- * GET /api/midia/blob?pathname=catalogo/exemplo.webp
- * Rota segura com proteção contra Path Traversal e redirecionamento de alta velocidade para o Edge CDN
- */
 router.get('/blob', async (req, res) => {
   try {
     const rawPath = req.query.pathname || req.query.url;
@@ -18,7 +14,6 @@ router.get('/blob', async (req, res) => {
       });
     }
 
-    // 1. Normalização e Sanitização rigorosa contra Path Traversal
     const pathname = decodeURIComponent(String(rawPath)).trim().replace(/^\/+/, '');
 
     if (pathname.includes('..') || pathname.includes('\\')) {
@@ -28,7 +23,6 @@ router.get('/blob', async (req, res) => {
       });
     }
 
-    // Apenas subdiretórios permitidos de catálogo de produtos e vídeos
     const isCatalogo = pathname.startsWith('catalogo/');
     const isVideos = pathname.startsWith('videos/');
 
@@ -47,7 +41,6 @@ router.get('/blob', async (req, res) => {
       });
     }
 
-    // 2. Tenta obter no store público da Vercel e redireciona permanentemente (301) para a CDN
     try {
       const blobPublico = await get(pathname, {
         access: 'public',
@@ -59,10 +52,8 @@ router.get('/blob', async (req, res) => {
         return res.redirect(301, blobPublico.blob.url);
       }
     } catch {
-      // Caso não esteja no store público, prossegue para o fallback privado
     }
 
-    // 3. Fallback de compatibilidade para itens legados em store privado
     try {
       const blobPrivado = await get(pathname, {
         access: 'private',
@@ -77,14 +68,12 @@ router.get('/blob', async (req, res) => {
         });
       }
 
-      // Headers de cache de longa duração (1 ano) para CDN e navegadores
       res.setHeader('Content-Type', blobPrivado.blob.contentType || 'image/webp');
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       if (blobPrivado.blob.size) {
         res.setHeader('Content-Length', blobPrivado.blob.size);
       }
 
-      // Streaming contínuo de baixo consumo de memória
       const reader = blobPrivado.stream.getReader();
       while (true) {
         const { done, value } = await reader.read();

@@ -3,10 +3,6 @@ import prisma from '../../config/prisma.js';
 
 const router = Router();
 
-/**
- * GET /api/produtos
- * Listagem pública do catálogo com busca por termo, filtros e paginação
- */
 router.get('/', async (req, res) => {
   try {
     const {
@@ -26,12 +22,10 @@ router.get('/', async (req, res) => {
     const take = Math.min(50, Math.max(1, parseInt(limite, 10) || 12));
     const skip = (page - 1) * take;
 
-    // Filtros base: apenas produtos ATIVOS
     const where = {
       status: 'ATIVO',
     };
 
-    // Filtro por texto (título, SKU ou descrição)
     if (busca && typeof busca === 'string' && busca.trim()) {
       const termo = busca.trim();
       where.OR = [
@@ -41,7 +35,6 @@ router.get('/', async (req, res) => {
       ];
     }
 
-    // Filtro por Categoria (Slug ou ID)
     if (categoria && typeof categoria === 'string') {
       if (categoria.toLowerCase() === 'outlet') {
         where.outlet = true;
@@ -54,14 +47,12 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // Filtro por Subcategoria (Slug ou ID)
     if (subcategoria && typeof subcategoria === 'string') {
       where.subcategoria = {
         OR: [{ slug: subcategoria }, { id: subcategoria }],
       };
     }
 
-    // Filtro por Variação (gênero, material ou apenas estoque positivo)
     const variacaoWhere = {
       statusAtivo: true,
     };
@@ -80,7 +71,6 @@ router.get('/', async (req, res) => {
       };
     }
 
-    // Ordenação
     let orderBy = {};
     switch (ordenar) {
       case 'menor_preco':
@@ -102,7 +92,6 @@ router.get('/', async (req, res) => {
         break;
     }
 
-    // Consulta e contagem total
     const [total, produtos] = await Promise.all([
       prisma.produto.count({ where }),
       prisma.produto.findMany({
@@ -163,10 +152,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-/**
- * GET /api/produtos/destaques
- * Retorna produtos em destaque na vitrine principal
- */
 router.get('/destaques', async (req, res) => {
   try {
     const produtos = await prisma.produto.findMany({
@@ -200,10 +185,6 @@ router.get('/destaques', async (req, res) => {
   }
 });
 
-/**
- * GET /api/produtos/:idOrSlug
- * Detalhes de um produto específico por ID ou Slug com medidas e fotos
- */
 router.get('/:idOrSlug', async (req, res) => {
   try {
     const { idOrSlug } = req.params;

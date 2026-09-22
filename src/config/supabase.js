@@ -12,7 +12,6 @@ if (!supabaseUrl || !supabaseKey) {
   );
 }
 
-// Inicializa cliente Supabase com chave administrativa para operações seguras de backend (storage, etc.)
 export const supabase = createClient(supabaseUrl || '', supabaseKey || '', {
   auth: {
     persistSession: false,

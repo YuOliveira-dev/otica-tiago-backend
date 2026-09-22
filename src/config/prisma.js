@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client';
 
-// Singleton para reuso do PrismaClient em ambientes serverless (Vercel) e desenvolvimento
 const globalForPrisma = globalThis;
 
 export const prisma =

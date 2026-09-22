@@ -2,10 +2,6 @@ import { Router } from 'express';
 
 const router = Router();
 
-/**
- * GET e POST /api/frete/calcular
- * Retorna as opções de entrega com Frete Grátis garantido para todo o Brasil.
- */
 const calcularFreteHandler = async (req, res) => {
   try {
     const cep = req.query.cep || req.body?.cep;
@@ -25,8 +21,6 @@ const calcularFreteHandler = async (req, res) => {
       });
     }
 
-    // Regras de negócio TS EYEWEAR: Frete 100% Grátis para todo o Brasil
-    // Simulação de prazos conforme primeira faixa de CEP (regiões do Brasil)
     const primeiroDigito = parseInt(cepLimpo.charAt(0), 10);
     let prazoPacMin = 3;
     let prazoPacMax = 7;
@@ -35,28 +29,24 @@ const calcularFreteHandler = async (req, res) => {
     let valorSedex = 19.9;
 
     if (primeiroDigito <= 1) {
-      // SP / Grande SP
       prazoPacMin = 2;
       prazoPacMax = 4;
       prazoSedexMin = 1;
       prazoSedexMax = 2;
       valorSedex = 14.9;
     } else if (primeiroDigito <= 3) {
-      // RJ, ES, MG
       prazoPacMin = 3;
       prazoPacMax = 6;
       prazoSedexMin = 1;
       prazoSedexMax = 3;
       valorSedex = 18.9;
     } else if (primeiroDigito <= 6) {
-      // Sul e Centro-Oeste
       prazoPacMin = 4;
       prazoPacMax = 8;
       prazoSedexMin = 2;
       prazoSedexMax = 4;
       valorSedex = 24.9;
     } else {
-      // Norte e Nordeste
       prazoPacMin = 5;
       prazoPacMax = 10;
       prazoSedexMin = 2;

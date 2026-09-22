@@ -3,10 +3,6 @@ import prisma from '../../config/prisma.js';
 
 const router = Router();
 
-/**
- * GET /api/categorias
- * Retorna a taxonomia oficial de categorias e subcategorias ativas da TS EYEWEAR
- */
 router.get('/', async (req, res) => {
   try {
     const categorias = await prisma.categoria.findMany({

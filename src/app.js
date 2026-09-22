@@ -9,17 +9,14 @@ import cookieParser from 'cookie-parser';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Middlewares
 import { apiGeneralRateLimiter } from './middlewares/rateLimit.middleware.js';
 
-// Rotas Públicas
 import produtosPublicRoutes from './routes/public/produtos.routes.js';
 import categoriasPublicRoutes from './routes/public/categorias.routes.js';
 import bannersPublicRoutes from './routes/public/banners.routes.js';
 import fretePublicRoutes from './routes/public/frete.routes.js';
 import midiaPublicRoutes from './routes/public/midia.routes.js';
 
-// Rotas Administrativas
 import authAdminRoutes from './routes/admin/auth.routes.js';
 import produtosAdminRoutes from './routes/admin/produtos.admin.routes.js';
 import categoriasAdminRoutes from './routes/admin/categorias.admin.routes.js';
@@ -28,18 +25,12 @@ import bannersAdminRoutes from './routes/admin/banners.admin.routes.js';
 
 const app = express();
 
-// ==========================================
-// 1. SEGURANÇA E POLÍTICAS DE CABEÇALHO
-// ==========================================
 app.use(
   helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' }, // Permite carregar imagens geradas no frontend
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
   })
 );
 
-// ==========================================
-// 2. CONFIGURAÇÃO DE CORS
-// ==========================================
 const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
@@ -47,17 +38,13 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
-// Função segura para checar origem permitida
 const isAllowedOrigin = (origin) => {
-  // Permite requisições sem origin (como curl, chamadas de servidor ou testes internos)
   if (!origin) return true;
 
-  // Domínios expressamente permitidos
   if (allowedOrigins.some((allowed) => origin === allowed || origin.startsWith(allowed))) {
     return true;
   }
 
-  // Deploys preview da Vercel para o frontend do projeto
   if (/^https:\/\/frontend-[a-z0-9-]+-yuoliveira-dev\.vercel\.app$/.test(origin) ||
       /^https:\/\/frontend-[a-z0-9-]+\.vercel\.app$/.test(origin)) {
     return true;
@@ -72,10 +59,8 @@ app.use(
       if (isAllowedOrigin(origin)) {
         callback(null, true);
       } else if (process.env.NODE_ENV !== 'production') {
-        // Modo desenvolvimento: permissivo apenas localmente
         callback(null, true);
       } else {
-        // Bloqueia com segurança em produção sem vazar credenciais
         callback(null, false);
       }
     },
@@ -85,22 +70,13 @@ app.use(
   })
 );
 
-// ==========================================
-// 3. PARSERS E RATE LIMITING
-// ==========================================
 app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Aplica limitador de taxa padrão para prevenir abusos
 app.use('/api/', apiGeneralRateLimiter);
-
-// Servir uploads locais quando em modo de desenvolvimento ou fallback
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// ==========================================
-// 4. HEALTH CHECK
-// ==========================================
 app.get('/api/health', (req, res) => {
   res.json({
     sucesso: true,
@@ -112,9 +88,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ==========================================
-// 5. ROTAS PÚBLICAS DO CATÁLOGO E CLIENTE
-// ==========================================
 app.use('/api/produtos', produtosPublicRoutes);
 app.use('/produtos', produtosPublicRoutes);
 
@@ -130,9 +103,6 @@ app.use('/frete', fretePublicRoutes);
 app.use('/api/midia', midiaPublicRoutes);
 app.use('/midia', midiaPublicRoutes);
 
-// ==========================================
-// 6. ROTAS ADMINISTRATIVAS TS EYEWEAR
-// ==========================================
 app.use('/api/admin/auth', authAdminRoutes);
 app.use('/admin/auth', authAdminRoutes);
 
@@ -148,9 +118,6 @@ app.use('/admin/midia', midiaAdminRoutes);
 app.use('/api/admin/banners', bannersAdminRoutes);
 app.use('/admin/banners', bannersAdminRoutes);
 
-// ==========================================
-// 7. TRATAMENTO DE ROTA NÃO ENCONTRADA (404 JSON)
-// ==========================================
 app.use('*', (req, res) => {
   res.status(404).json({
     sucesso: false,
@@ -158,9 +125,6 @@ app.use('*', (req, res) => {
   });
 });
 
-// ==========================================
-// 8. MIDDLEWARE GLOBAL DE TRATAMENTO DE ERROS
-// ==========================================
 app.use((err, req, res, next) => {
   console.error('❌ Erro capturado no servidor:', err);
 
@@ -184,9 +148,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ==========================================
-// 9. INICIALIZAÇÃO LOCAL DO SERVIDOR
-// ==========================================
 const PORT = process.env.PORT || 5000;
 
 if (process.env.VERCEL !== '1') {
