@@ -29,14 +29,30 @@ enum TipoMovimentacaoEstoque {
 }
 
 model UsuarioAdmin {
-  id           String   @id @default(uuid())
+  id           String        @id @default(uuid())
   nome         String
-  email        String   @unique
+  email        String        @unique
   senhaHash    String
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  criadoEm     DateTime      @default(now())
+  atualizadoEm DateTime      @updatedAt
+  sessoes      SessaoAdmin[]
 
   @@map("usuarios_admin")
+}
+
+model SessaoAdmin {
+  id           String       @id @default(uuid())
+  usuarioId    String
+  usuario      UsuarioAdmin @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  token        String       @unique
+  userAgent    String?
+  ip           String?
+  expiraEm     DateTime
+  criadoEm     DateTime     @default(now())
+
+  @@index([usuarioId])
+  @@index([token])
+  @@map("sessoes_admin")
 }
 
 model Categoria {

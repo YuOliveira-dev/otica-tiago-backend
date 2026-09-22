@@ -6,26 +6,31 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Iniciando seed do banco de dados TS EYEWEAR...');
 
-  // 1. Criação do Usuário Administrador Padrão
-  const emailAdmin = 'admin@tseyewear.com.br';
-  const adminExistente = await prisma.usuarioAdmin.findUnique({
-    where: { email: emailAdmin },
-  });
+  // 1. Criação do Usuário Administrador Padrão a partir do .env
+  const emailAdmin = process.env.ADMIN_DEFAULT_EMAIL?.toLowerCase().trim();
+  const senhaPadrao = process.env.ADMIN_DEFAULT_PASSWORD;
 
-  if (!adminExistente) {
-    const senhaPadrao = 'AdminTsEyewear2026!';
-    const senhaHash = await bcrypt.hash(senhaPadrao, 12);
-
-    await prisma.usuarioAdmin.create({
-      data: {
-        nome: 'Administrador TS EYEWEAR',
-        email: emailAdmin,
-        senhaHash,
-      },
+  if (emailAdmin && senhaPadrao) {
+    const adminExistente = await prisma.usuarioAdmin.findUnique({
+      where: { email: emailAdmin },
     });
-    console.log(`✓ Administrador criado: ${emailAdmin} (Senha temporária: ${senhaPadrao})`);
+
+    if (!adminExistente) {
+      const senhaHash = await bcrypt.hash(senhaPadrao, 12);
+
+      await prisma.usuarioAdmin.create({
+        data: {
+          nome: process.env.ADMIN_DEFAULT_NAME || 'Administrador TS EYEWEAR',
+          email: emailAdmin,
+          senhaHash,
+        },
+      });
+      console.log(`✓ Administrador criado a partir de variáveis de ambiente (.env): ${emailAdmin}`);
+    } else {
+      console.log(`✓ Administrador já existe no banco: ${emailAdmin}`);
+    }
   } else {
-    console.log(`✓ Administrador já existe: ${emailAdmin}`);
+    console.log('ℹ️ Variáveis ADMIN_DEFAULT_EMAIL ou ADMIN_DEFAULT_PASSWORD não configuradas no .env. Pulando criação automática de usuário admin.');
   }
 
   // 2. Categorias e Subcategorias Oficiais
