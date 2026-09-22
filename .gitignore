@@ -14,9 +14,4 @@ dist/
 .vercel
 
 supabase/
-prisma/
-src/admin/
-src/admin
-src/routes/admin/
-src/**/admin/
-admin/
+
