@@ -34,6 +34,8 @@ app.use(
 const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  'https://tsjoculos.com',
+  'https://www.tsjoculos.com',
   'https://frontend-five-teal-52.vercel.app',
   process.env.FRONTEND_URL,
 ].filter(Boolean);
@@ -42,6 +44,10 @@ const isAllowedOrigin = (origin) => {
   if (!origin) return true;
 
   if (allowedOrigins.some((allowed) => origin === allowed || origin.startsWith(allowed))) {
+    return true;
+  }
+
+  if (/^https:\/\/(www\.)?tsjoculos\.com$/.test(origin)) {
     return true;
   }
 
