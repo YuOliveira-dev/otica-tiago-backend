@@ -41,8 +41,13 @@ router.get('/', async (req, res) => {
       } else if (categoria.toLowerCase() === 'novidades') {
         where.novidade = true;
       } else {
+        const cleanNome = categoria.replace(/-/g, ' ');
         where.categoria = {
-          OR: [{ slug: categoria }, { id: categoria }],
+          OR: [
+            { slug: categoria },
+            { id: categoria },
+            { nome: { contains: cleanNome, mode: 'insensitive' } },
+          ],
         };
       }
     }
