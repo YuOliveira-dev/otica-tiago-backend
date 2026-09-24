@@ -25,6 +25,8 @@ import bannersAdminRoutes from './routes/admin/banners.admin.routes.js';
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -32,10 +34,10 @@ app.use(
 );
 
 const allowedOrigins = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
   'https://tsjoculos.com',
   'https://www.tsjoculos.com',
+  'https://api.tsjoculos.com',
+  'https://otica-tiago-backend.vercel.app',
   'https://frontend-five-teal-52.vercel.app',
   process.env.FRONTEND_URL,
 ].filter(Boolean);
@@ -47,7 +49,7 @@ const isAllowedOrigin = (origin) => {
     return true;
   }
 
-  if (/^https:\/\/(www\.)?tsjoculos\.com$/.test(origin)) {
+  if (/^https:\/\/(www\.|api\.)?tsjoculos\.com$/.test(origin)) {
     return true;
   }
 
