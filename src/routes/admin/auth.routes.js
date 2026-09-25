@@ -37,7 +37,7 @@ function getCookieOptions(req) {
   const options = {
     httpOnly: true,
     secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax',
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/',
   };
@@ -85,12 +85,16 @@ router.post('/login', loginRateLimiter, async (req, res) => {
     try {
       secret = obterJwtSecret();
     } catch (configErr) {
-      console.error('❌ Falha de configuração de segurança:', configErr.message);
+      console.error('Falha de configuração de segurança:', configErr.message);
       return res.status(500).json({
         sucesso: false,
         erro: 'Erro de configuração interna de autenticação no servidor.',
       });
     }
+
+    await prisma.sessaoAdmin.deleteMany({
+      where: { usuarioId: admin.id },
+    }).catch(() => {});
 
     const sessionId = crypto.randomUUID();
     const expiraEm = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -107,11 +111,13 @@ router.post('/login', loginRateLimiter, async (req, res) => {
       { expiresIn: JWT_EXPIRES_IN }
     );
 
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
     await prisma.sessaoAdmin.create({
       data: {
         id: sessionId,
         usuarioId: admin.id,
-        token,
+        token: tokenHash,
         userAgent: req.headers['user-agent'] || null,
         ip: (req.headers['x-forwarded-for'] || req.ip || '').toString().slice(0, 100) || null,
         expiraEm,
@@ -124,7 +130,6 @@ router.post('/login', loginRateLimiter, async (req, res) => {
     res.json({
       sucesso: true,
       mensagem: `Bem-vindo ao Painel TS EYEWEAR, ${admin.nome}!`,
-      token,
       admin: {
         id: admin.id,
         nome: admin.nome,
@@ -144,7 +149,6 @@ router.get('/me', autenticarAdmin, (req, res) => {
   res.json({
     sucesso: true,
     admin: req.admin,
-    token: req.tokenAdmin || undefined,
   });
 });
 
@@ -158,8 +162,14 @@ router.post('/logout', async (req, res) => {
     }
 
     if (token) {
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
       await prisma.sessaoAdmin.deleteMany({
-        where: { token },
+        where: {
+          OR: [
+            { token: tokenHash },
+            { token: token },
+          ],
+        },
       }).catch((err) => {
         console.warn('Aviso ao deletar sessão do banco no logout:', err.message);
       });
@@ -170,21 +180,20 @@ router.post('/logout', async (req, res) => {
     const isProduction = process.env.NODE_ENV === 'production';
     const cookieDomain = getCookieDomain(req);
 
-    res.clearCookie('admin_token', {
+    const clearOptions = {
       path: '/',
       httpOnly: true,
-      sameSite: isProduction ? 'none' : 'lax',
+      sameSite: 'lax',
       secure: isProduction,
+    };
+
+    res.clearCookie('admin_token', {
+      ...clearOptions,
       ...(cookieDomain ? { domain: cookieDomain } : {}),
     });
 
     if (cookieDomain) {
-      res.clearCookie('admin_token', {
-        path: '/',
-        httpOnly: true,
-        sameSite: isProduction ? 'none' : 'lax',
-        secure: isProduction,
-      });
+      res.clearCookie('admin_token', clearOptions);
     }
 
     res.json({

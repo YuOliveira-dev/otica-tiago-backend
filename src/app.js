@@ -36,6 +36,8 @@ app.use(
 const allowedOrigins = [
   'https://tsjoculos.com',
   'https://www.tsjoculos.com',
+  'https://admin.tsjoculos.com',
+  'https://www.admin.tsjoculos.com',
   'https://api.tsjoculos.com',
   'https://otica-tiago-backend.vercel.app',
   'https://frontend-five-teal-52.vercel.app',
@@ -49,12 +51,8 @@ const isAllowedOrigin = (origin) => {
     return true;
   }
 
-  if (/^https:\/\/(www\.|api\.)?tsjoculos\.com$/.test(origin)) {
-    return true;
-  }
-
   if (/^https:\/\/frontend-[a-z0-9-]+-yuoliveira-dev\.vercel\.app$/.test(origin) ||
-      /^https:\/\/frontend-[a-z0-9-]+\.vercel\.app$/.test(origin)) {
+    /^https:\/\/frontend-[a-z0-9-]+\.vercel\.app$/.test(origin)) {
     return true;
   }
 
@@ -83,6 +81,12 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use('/api/', apiGeneralRateLimiter);
+app.use('/admin/', apiGeneralRateLimiter);
+app.use('/produtos', apiGeneralRateLimiter);
+app.use('/categorias', apiGeneralRateLimiter);
+app.use('/banners', apiGeneralRateLimiter);
+app.use('/frete', apiGeneralRateLimiter);
+app.use('/midia', apiGeneralRateLimiter);
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 app.get('/api/health', (req, res) => {
@@ -91,8 +95,6 @@ app.get('/api/health', (req, res) => {
     status: 'ONLINE',
     loja: 'TS EYEWEAR - Ótica 100% Online',
     timestamp: new Date().toISOString(),
-    uptime: Math.floor(process.uptime()),
-    ambiente: process.env.NODE_ENV || 'development',
   });
 });
 
@@ -129,7 +131,7 @@ app.use('/admin/banners', bannersAdminRoutes);
 app.use('*', (req, res) => {
   res.status(404).json({
     sucesso: false,
-    erro: `Endpoint ${req.originalUrl} não encontrado na API TS EYEWEAR.`,
+    erro: 'Endpoint não encontrado na API TS EYEWEAR.',
   });
 });
 
@@ -150,27 +152,17 @@ app.use((err, req, res, next) => {
     });
   }
 
+  const isClientError = err.status && err.status >= 400 && err.status < 500;
+  const mensagemSegura = isClientError
+    ? (err.message || 'Requisição inválida.')
+    : 'Erro interno no servidor TS EYEWEAR.';
+
   res.status(err.status || 500).json({
     sucesso: false,
-    erro: err.message || 'Erro interno no servidor TS EYEWEAR.',
+    erro: mensagemSegura,
   });
 });
 
-const PORT = process.env.PORT || 5000;
-
-if (process.env.VERCEL !== '1') {
-  app.listen(PORT, () => {
-    console.log(`\n======================================================`);
-    console.log(`👓 TS EYEWEAR API - Servidor Backend Online!`);
-    console.log(`🌐 Base URL: http://localhost:${PORT}/api`);
-    console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
-    console.log(`📦 Produtos: http://localhost:${PORT}/api/produtos`);
-    console.log(`📁 Categorias: http://localhost:${PORT}/api/categorias`);
-    console.log(`🖼️ Banners: http://localhost:${PORT}/api/banners`);
-    console.log(`🚚 Frete: http://localhost:${PORT}/api/frete/calcular`);
-    console.log(`🔒 Admin Auth: http://localhost:${PORT}/api/admin/auth/login`);
-    console.log(`======================================================\n`);
-  });
-}
+const PORT = process.env.PORT;
 
 export default app;

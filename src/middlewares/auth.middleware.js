@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/prisma.js';
 
@@ -39,8 +40,15 @@ export async function autenticarAdmin(req, res, next) {
 
     jwt.verify(token, secret);
 
-    const sessaoAtiva = await prisma.sessaoAdmin.findUnique({
-      where: { token },
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    const sessaoAtiva = await prisma.sessaoAdmin.findFirst({
+      where: {
+        OR: [
+          { token: tokenHash },
+          { token: token },
+        ],
+      },
       include: {
         usuario: {
           select: {

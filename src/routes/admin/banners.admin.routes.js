@@ -15,6 +15,12 @@ router.get('/', (req, res) => {
   });
 });
 
+function validarCtaUrl(url) {
+  if (!url) return true;
+  const trimmed = url.trim();
+  return trimmed.startsWith('/') || /^https?:\/\//i.test(trimmed);
+}
+
 router.post('/', (req, res) => {
   try {
     const {
@@ -33,6 +39,13 @@ router.post('/', (req, res) => {
       return res.status(400).json({
         sucesso: false,
         erro: 'Título e imagem do banner são obrigatórios.',
+      });
+    }
+
+    if (ctaUrl && !validarCtaUrl(ctaUrl)) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: 'URL do botão CTA inválida. Use links internos começando com "/" ou externos com "https://".',
       });
     }
 
@@ -60,7 +73,7 @@ router.post('/', (req, res) => {
     console.error('Erro ao cadastrar banner:', err);
     res.status(500).json({
       sucesso: false,
-      erro: 'Falha ao cadastrar banner.',
+      erro: 'Falha ao processar cadastro do banner.',
     });
   }
 });
@@ -77,10 +90,37 @@ router.put('/:id', (req, res) => {
       });
     }
 
+    const {
+      title,
+      subtitle,
+      ctaText,
+      ctaUrl,
+      badgeTitle,
+      badgeSub,
+      imageUrl,
+      order,
+      isActive,
+    } = req.body;
+
+    if (ctaUrl !== undefined && !validarCtaUrl(ctaUrl)) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: 'URL do botão CTA inválida. Use links internos começando com "/" ou externos com "https://".',
+      });
+    }
+
     const atualizado = {
       ...bannerAtual,
-      ...req.body,
       id,
+      ...(title !== undefined ? { title: String(title).trim() } : {}),
+      ...(subtitle !== undefined ? { subtitle: String(subtitle).trim() } : {}),
+      ...(ctaText !== undefined ? { ctaText: String(ctaText).trim() } : {}),
+      ...(ctaUrl !== undefined ? { ctaUrl: String(ctaUrl).trim() } : {}),
+      ...(badgeTitle !== undefined ? { badgeTitle: String(badgeTitle).trim() } : {}),
+      ...(badgeSub !== undefined ? { badgeSub: String(badgeSub).trim() } : {}),
+      ...(imageUrl !== undefined ? { imageUrl: String(imageUrl).trim() } : {}),
+      ...(order !== undefined ? { order: parseInt(order, 10) || 1 } : {}),
+      ...(isActive !== undefined ? { isActive: Boolean(isActive) } : {}),
     };
 
     BannerStore.salvar(atualizado);
@@ -94,7 +134,7 @@ router.put('/:id', (req, res) => {
     console.error('Erro ao atualizar banner:', err);
     res.status(500).json({
       sucesso: false,
-      erro: 'Falha ao atualizar banner.',
+      erro: 'Falha ao processar atualização do banner.',
     });
   }
 });

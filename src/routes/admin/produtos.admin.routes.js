@@ -6,6 +6,8 @@ const router = Router();
 
 router.use(autenticarAdmin);
 
+const STATUS_PRODUTO_PERMITIDOS = ['ATIVO', 'OCULTO', 'ARQUIVADO'];
+
 function gerarSlug(texto, sufixo = '') {
   const base = texto
     .toString()
@@ -218,6 +220,13 @@ router.post('/', async (req, res) => {
       });
     }
 
+    if (status && !STATUS_PRODUTO_PERMITIDOS.includes(status)) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: `Status inválido. Escolha entre: ${STATUS_PRODUTO_PERMITIDOS.join(', ')}.`,
+      });
+    }
+
     const skuNormalizado = skuPai.trim().toUpperCase();
     const slugFinal = customSlug?.trim() || gerarSlug(titulo, skuNormalizado);
 
@@ -332,7 +341,7 @@ router.post('/', async (req, res) => {
     console.error('Erro ao cadastrar produto:', error);
     res.status(500).json({
       sucesso: false,
-      erro: error.message || 'Falha ao processar o cadastro do produto.',
+      erro: 'Falha ao processar o cadastro do produto.',
     });
   }
 });
@@ -366,6 +375,13 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({
         sucesso: false,
         erro: 'Produto não encontrado para atualização.',
+      });
+    }
+
+    if (status !== undefined && !STATUS_PRODUTO_PERMITIDOS.includes(status)) {
+      return res.status(400).json({
+        sucesso: false,
+        erro: `Status inválido. Escolha entre: ${STATUS_PRODUTO_PERMITIDOS.join(', ')}.`,
       });
     }
 
@@ -522,7 +538,7 @@ router.put('/:id', async (req, res) => {
     console.error('Erro ao atualizar produto:', error);
     res.status(500).json({
       sucesso: false,
-      erro: error.message || 'Falha ao atualizar dados do produto.',
+      erro: 'Falha ao atualizar dados do produto.',
     });
   }
 });
