@@ -18,32 +18,22 @@ function obterJwtSecret() {
   return secret;
 }
 
-function getCookieDomain(req) {
-  if (process.env.COOKIE_DOMAIN) {
-    return process.env.COOKIE_DOMAIN;
-  }
-  const host = (req.headers['x-forwarded-host'] || req.headers.host || '').toLowerCase();
-  const origin = (req.headers.origin || '').toLowerCase();
-  if (host.includes('tsjoculos.com') || origin.includes('tsjoculos.com')) {
-    return '.tsjoculos.com';
-  }
-  return undefined;
-}
-
-function getCookieOptions(req) {
+function getCookieOptions() {
   const isProduction = process.env.NODE_ENV === 'production';
-  const cookieDomain = getCookieDomain(req);
 
   const options = {
     httpOnly: true,
     secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax',
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/',
   };
 
-  if (cookieDomain) {
-    options.domain = cookieDomain;
+  if (isProduction) {
+    if (!process.env.COOKIE_DOMAIN) {
+      throw new Error('CONFIG_ERROR: Variável COOKIE_DOMAIN é obrigatória em produção.');
+    }
+    options.domain = process.env.COOKIE_DOMAIN;
   }
 
   return options;
@@ -118,7 +108,7 @@ router.post('/login', loginRateLimiter, async (req, res) => {
       },
     });
 
-    const cookieOptions = getCookieOptions(req);
+    const cookieOptions = getCookieOptions();
     res.cookie('admin_token', token, cookieOptions);
 
     res.json({
@@ -167,25 +157,8 @@ router.post('/logout', async (req, res) => {
   } catch (err) {
     console.warn('Erro ao processar exclusão de sessão no logout:', err);
   } finally {
-    const isProduction = process.env.NODE_ENV === 'production';
-    const cookieDomain = getCookieDomain(req);
-
-    res.clearCookie('admin_token', {
-      path: '/',
-      httpOnly: true,
-      sameSite: isProduction ? 'none' : 'lax',
-      secure: isProduction,
-      ...(cookieDomain ? { domain: cookieDomain } : {}),
-    });
-
-    if (cookieDomain) {
-      res.clearCookie('admin_token', {
-        path: '/',
-        httpOnly: true,
-        sameSite: isProduction ? 'none' : 'lax',
-        secure: isProduction,
-      });
-    }
+    const cookieOptions = getCookieOptions();
+    res.clearCookie('admin_token', cookieOptions);
 
     res.json({
       sucesso: true,
