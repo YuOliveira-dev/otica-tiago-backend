@@ -96,6 +96,37 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// DEBUG TEMPORÁRIO - remover após resolver o 401
+app.get('/api/debug/auth-check', (req, res) => {
+  const cookieHeader = req.headers.cookie || '(nenhum)';
+  const hasCookieParser = !!req.cookies;
+  const adminTokenFromCookies = req.cookies?.admin_token ? 'PRESENTE' : 'AUSENTE';
+  const authHeader = req.headers.authorization ? 'PRESENTE' : 'AUSENTE';
+  const origin = req.headers.origin || '(nenhum)';
+  const host = req.headers.host || '(nenhum)';
+  const xForwardedHost = req.headers['x-forwarded-host'] || '(nenhum)';
+  const cookieDomainEnv = process.env.COOKIE_DOMAIN || '(não definido)';
+
+  res.json({
+    cookies: {
+      rawHeader: cookieHeader.substring(0, 200),
+      cookieParserAtivo: hasCookieParser,
+      adminToken: adminTokenFromCookies,
+      parsedKeys: hasCookieParser ? Object.keys(req.cookies) : [],
+    },
+    headers: {
+      origin,
+      host,
+      xForwardedHost,
+      authorization: authHeader,
+    },
+    config: {
+      nodeEnv: process.env.NODE_ENV,
+      cookieDomain: cookieDomainEnv,
+    },
+  });
+});
+
 app.use('/api/produtos', produtosPublicRoutes);
 app.use('/produtos', produtosPublicRoutes);
 
